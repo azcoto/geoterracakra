@@ -151,7 +151,6 @@ interface DesaOption {
 
 interface GridStatistics {
   classes: { areaM2: number; classCode: number; percentage: number }[];
-  geometry: unknown;
   gridId: number;
   totalAreaM2: number;
   year: number;
@@ -189,6 +188,7 @@ function LandcoverMap() {
   const [selectedGrid, setSelectedGrid] = useState<SelectedGrid | null>(null);
   const [gridStatistics, setGridStatistics] = useState<GridStatistics | null>(null);
   const [isGridStatisticsLoading, setIsGridStatisticsLoading] = useState(false);
+  const [isGridDownloadLoading, setIsGridDownloadLoading] = useState(false);
   const [gridStatisticsError, setGridStatisticsError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -269,36 +269,26 @@ function LandcoverMap() {
     }
   }
 
-  function downloadGridStatistics() {
+  async function downloadGridStatistics() {
     if (!gridStatistics) return;
 
-    const classes = gridStatistics.classes.map((item) => {
-      const label = landcoverLegend.find((legend) => legend.code === item.classCode)?.label ?? `Class ${item.classCode}`;
-      return {
-        area_m2: Number(item.areaM2.toFixed(2)),
-        class: label,
-        class_code: item.classCode,
-        percentage: Number(item.percentage.toFixed(2)),
-      };
-    });
-    const feature = {
-      geometry: gridStatistics.geometry,
-      properties: {
-        classes,
-        grid_id: gridStatistics.gridId,
-        methodology: 'proprietary',
-        source: 'esri-landcover',
-        total_area_m2: Number(gridStatistics.totalAreaM2.toFixed(2)),
-        year: gridStatistics.year,
-      },
-      type: 'Feature',
-    };
-    const url = URL.createObjectURL(new Blob([JSON.stringify(feature)], { type: 'application/geo+json' }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `landcover-grid-${gridStatistics.gridId}-${gridStatistics.year}.geojson`;
-    link.click();
-    URL.revokeObjectURL(url);
+    setIsGridDownloadLoading(true);
+    try {
+      const response = await fetch(`${apiUrl}/landcover/grid/${gridStatistics.gridId}/features?year=${gridStatistics.year}`);
+      if (!response.ok) throw new Error('Unable to download landcover features');
+
+      const featureCollection = await response.json();
+      const url = URL.createObjectURL(new Blob([JSON.stringify(featureCollection)], { type: 'application/geo+json' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `landcover-grid-${gridStatistics.gridId}-${gridStatistics.year}.geojson`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setGridStatisticsError('GeoJSON tidak dapat diunduh.');
+    } finally {
+      setIsGridDownloadLoading(false);
+    }
   }
 
   return (
@@ -378,9 +368,9 @@ function LandcoverMap() {
                     );
                   })}
                 </ul>
-                <Button className="w-full" onClick={downloadGridStatistics} size="sm" type="button" variant="outline">
+                <Button className="w-full" disabled={isGridDownloadLoading} onClick={downloadGridStatistics} size="sm" type="button" variant="outline">
                   <Download aria-hidden="true" />
-                  Unduh GeoJSON
+                  {isGridDownloadLoading ? 'Menyiapkan GeoJSON…' : 'Unduh GeoJSON'}
                 </Button>
               </>
             )}

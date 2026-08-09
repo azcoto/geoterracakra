@@ -7,8 +7,10 @@ interface ClassAreaRow {
   class_code: number;
 }
 
-interface GridGeometryRow {
+interface LandcoverFeatureRow {
+  class_code: number;
   geometry: unknown;
+  id: number;
 }
 
 @Injectable()
@@ -16,14 +18,6 @@ export class LandcoverService {
   constructor(@Inject('DATABASE') private readonly db: Kysely<Database>) {}
 
   async getGridStatistics(gridId: number, year: number) {
-    const gridResult = await sql<GridGeometryRow>`
-      SELECT ST_AsGeoJSON(geom)::json AS geometry
-      FROM grid
-      WHERE id = ${gridId}
-    `.execute(this.db);
-    const grid = gridResult.rows[0];
-    if (!grid) return null;
-
     const result = await sql<ClassAreaRow>`
       SELECT
         class_code,
@@ -46,10 +40,37 @@ export class LandcoverService {
         classCode: row.class_code,
         percentage: totalAreaM2 === 0 ? 0 : (Number(row.area_m2) / totalAreaM2) * 100,
       })),
-      geometry: grid.geometry,
       gridId,
       totalAreaM2,
       year,
+    };
+  }
+
+  async getGridFeatures(gridId: number, year: number) {
+    const result = await sql<LandcoverFeatureRow>`
+      SELECT id, class_code, ST_AsGeoJSON(geom)::json AS geometry
+      FROM landcover
+      WHERE grid_id = ${gridId}
+        AND year = ${year}
+        AND source = 'esri-landcover'
+      ORDER BY class_code, id
+    `.execute(this.db);
+
+    if (result.rows.length === 0) return null;
+
+    return {
+      features: result.rows.map((row) => ({
+        geometry: row.geometry,
+        properties: {
+          class_code: row.class_code,
+          grid_id: gridId,
+          methodology: 'proprietary',
+          source: 'esri-landcover',
+          year,
+        },
+        type: 'Feature',
+      })),
+      type: 'FeatureCollection',
     };
   }
 }

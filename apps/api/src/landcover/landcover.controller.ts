@@ -21,4 +21,19 @@ export class LandcoverController {
 
     return statistics;
   }
+
+  @Get('grid/:gridId/features')
+  async getGridFeatures(@Param('gridId', ParseIntPipe) gridId: number, @Query('year') yearValue: string) {
+    const year = Number(yearValue);
+    if (!Number.isInteger(year) || !supportedYears.has(year)) {
+      throw new BadRequestException('year must be one of 2020, 2021, 2022, 2023, or 2025');
+    }
+
+    const featureCollection = await this.landcoverService.getGridFeatures(gridId, year);
+    if (!featureCollection) {
+      throw new NotFoundException(`Landcover data for grid ${gridId} in ${year} was not found`);
+    }
+
+    return featureCollection;
+  }
 }

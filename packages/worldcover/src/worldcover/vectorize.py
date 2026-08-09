@@ -6,24 +6,20 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from collections.abc import Iterable
-from dataclasses import dataclass
+from collections.abc import Generator, Iterable
+from contextlib import contextmanager
 from pathlib import Path
 
 import psycopg
 import rasterio
-from rasterio.features import bounds, shapes
+from rasterio.features import shapes
+from rasterio.io import MemoryFile
 from rasterio.mask import mask
+from rasterio.merge import merge
 
 DEFAULT_YEARS = (2020, 2021, 2022, 2023, 2025)
 SOURCE = "esri-landcover"
 METHODOLOGY = "proprietary"
-
-
-@dataclass(frozen=True)
-class RasterTile:
-    path: Path
-    bounds: rasterio.coords.BoundingBox
 
 
 def load_dotenv() -> None:
@@ -38,21 +34,41 @@ def load_dotenv() -> None:
             return
 
 
-def overlaps(left: rasterio.coords.BoundingBox, right: tuple[float, float, float, float]) -> bool:
-    west, south, east, north = right
-    return left.left < east and left.right > west and left.bottom < north and left.top > south
-
-
-def load_tiles(input_dir: Path, year: int) -> list[RasterTile]:
-    tiles: list[RasterTile] = []
+def load_tiles(input_dir: Path, year: int) -> list[Path]:
+    tiles: list[Path] = []
     for path in sorted((input_dir / str(year)).glob("*.tif")):
         with rasterio.open(path) as dataset:
             if dataset.crs is None or dataset.crs.to_epsg() != 4326:
                 raise ValueError(f"{path} must use EPSG:4326")
-            tiles.append(RasterTile(path, dataset.bounds))
+            tiles.append(path)
     if not tiles:
         raise FileNotFoundError(f"No GeoTIFFs found for {year} in {input_dir}")
     return tiles
+
+
+@contextmanager
+def open_mosaic(tiles: list[Path]) -> Generator[rasterio.io.DatasetWriter, None, None]:
+    """Combine overlapping Earth Engine downloads into one pixel-aligned raster."""
+    sources = [rasterio.open(path) for path in tiles]
+    try:
+        pixels, transform = merge(sources, method="first", nodata=0)
+        profile = {
+            "count": pixels.shape[0],
+            "crs": sources[0].crs,
+            "driver": "GTiff",
+            "dtype": pixels.dtype,
+            "height": pixels.shape[1],
+            "nodata": 0,
+            "transform": transform,
+            "width": pixels.shape[2],
+        }
+        with MemoryFile() as memory:
+            with memory.open(**profile) as mosaic:
+                mosaic.write(pixels)
+                yield mosaic
+    finally:
+        for source in sources:
+            source.close()
 
 
 def grid_rows(connection: psycopg.Connection, year: int, source: str) -> list[tuple[int, dict]]:
@@ -89,14 +105,27 @@ def insert_features(
     methodology: str,
     features: Iterable[tuple[int, str]],
 ) -> int:
-    rows = [(grid_id, year, source, methodology, class_code, geometry) for class_code, geometry in features]
+    rows = [(grid_id, year, source, methodology, class_code, geometry, grid_id) for class_code, geometry in features]
     if not rows:
         return 0
     with connection.cursor() as cursor:
         cursor.executemany(
             """
             INSERT INTO landcover (grid_id, year, source, methodology, class_code, geom)
-            VALUES (%s, %s, %s, %s, %s, ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326)))
+            SELECT
+              %s,
+              %s,
+              %s,
+              %s,
+              %s,
+              ST_Multi(
+                ST_CollectionExtract(
+                  ST_Intersection(ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326), grid.geom),
+                  3
+                )
+              )
+            FROM grid
+            WHERE grid.id = %s
             """,
             rows,
         )
@@ -105,18 +134,13 @@ def insert_features(
 
 def vectorize_grid(
     geometry: dict,
-    tiles: list[RasterTile],
+    dataset: rasterio.io.DatasetReader,
 ) -> Iterable[tuple[int, str]]:
-    grid_bounds = bounds(geometry)
-    for tile in tiles:
-        if not overlaps(tile.bounds, grid_bounds):
-            continue
-        with rasterio.open(tile.path) as dataset:
-            pixels, transform = mask(dataset, [geometry], crop=True, filled=False)
-            values = pixels[0]
-            valid = ~values.mask
-            for shape, class_code in shapes(values.filled(0), mask=valid, transform=transform):
-                yield int(class_code), json.dumps(shape, separators=(",", ":"))
+    pixels, transform = mask(dataset, [geometry], crop=True, filled=False)
+    values = pixels[0]
+    valid = ~values.mask
+    for shape, class_code in shapes(values.filled(0), mask=valid, transform=transform):
+        yield int(class_code), json.dumps(shape, separators=(",", ":"))
 
 
 def process_year(
@@ -132,17 +156,18 @@ def process_year(
     if limit is not None:
         grids = grids[:limit]
     print(f"{year}: {len(grids)} grids pending across {len(tiles)} raster tiles", flush=True)
-    for index, (grid_id, geometry) in enumerate(grids, start=1):
-        with connection.transaction():
-            count = insert_features(
-                connection,
-                grid_id,
-                year,
-                source,
-                methodology,
-                vectorize_grid(geometry, tiles),
-            )
-        print(f"{year}: grid {grid_id} ({index}/{len(grids)}), {count} features", flush=True)
+    with open_mosaic(tiles) as mosaic:
+        for index, (grid_id, geometry) in enumerate(grids, start=1):
+            with connection.transaction():
+                count = insert_features(
+                    connection,
+                    grid_id,
+                    year,
+                    source,
+                    methodology,
+                    vectorize_grid(geometry, mosaic),
+                )
+            print(f"{year}: grid {grid_id} ({index}/{len(grids)}), {count} features", flush=True)
 
 
 def main() -> None:
