@@ -1,0 +1,14 @@
+[project]
+name = "worldcover"
+version = "0.1.0"
+description = "Earth Engine downloader for Esri 10 m annual land-cover data"
+requires-python = ">=3.12"
+dependencies = [
+  "earthengine-api>=1.5",
+  "psycopg[binary]>=3.2",
+  "rasterio>=1.4",
+  "requests>=2.32",
+]
+
+[tool.uv]
+package = false

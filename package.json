@@ -1,20 +1,24 @@
 {
   "name": "geoterracakra",
   "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@11.4.0",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
-    "lint": "turbo run lint",
-    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
-    "check-types": "turbo run check-types"
+    "typecheck": "turbo run typecheck",
+    "check": "turbo run check",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --write .",
+    "format": "biome format --write .",
+    "format:check": "biome format ."
   },
   "devDependencies": {
-    "prettier": "^3.7.4",
-    "turbo": "^2.10.7",
-    "typescript": "5.9.2"
-  },
-  "packageManager": "pnpm@9.0.0",
-  "engines": {
-    "node": ">=18"
+    "@biomejs/biome": "2.5.7",
+    "turbo": "^2.10.8",
+    "typescript": "7.0.2"
   }
 }

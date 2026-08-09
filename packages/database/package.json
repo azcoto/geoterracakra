@@ -1,0 +1,30 @@
+{
+  "name": "@geoterracakra/database",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "db:migrate": "tsx src/migrate.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "pnpm run typecheck"
+  },
+  "dependencies": {
+    "dotenv": "latest",
+    "kysely": "latest",
+    "pg": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/pg": "latest",
+    "tsx": "latest"
+  }
+}

@@ -1,17 +1,17 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
-  "ui": "tui",
+  "globalEnv": ["DATABASE_URL", "PORT", "WEB_ORIGIN", "MAPID_API_KEY"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": [".next/**", "!.next/cache/**", "!.next/dev/**"]
+      "outputs": ["dist/**", "build/**"]
     },
-    "lint": {
-      "dependsOn": ["^lint"]
+    "typecheck": {
+      "dependsOn": ["^typecheck"]
     },
-    "check-types": {
-      "dependsOn": ["^check-types"]
+    "check": {
+      "dependsOn": ["^check"]
     },
     "dev": {
       "cache": false,
