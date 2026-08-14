@@ -1,6 +1,6 @@
 # Production deployment
 
-The GitHub Actions workflow validates pull requests targeting `main`, builds the frontend and API, and deploys after a push to the protected `main` branch. The deployment uses SSH/rsync, Docker Compose, and Nginx.
+The GitHub Actions workflow validates pull requests targeting `main`, builds the frontend and API on GitHub-hosted runners, and deploys after a push to the protected `main` branch using a self-hosted GitHub runner with access to the private production network. The deployment uses SSH/rsync, Docker Compose, and Nginx.
 
 ## GitHub Actions secrets and variables
 
