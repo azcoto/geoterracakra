@@ -1,0 +1,44 @@
+# Build from the repository root:
+# docker build --file apps/api/Dockerfile.production --tag geoterracakra-api:latest .
+FROM node:24-bookworm-slim AS build
+
+ENV COREPACK_HOME=/corepack
+
+RUN corepack enable && corepack prepare pnpm@11.4.0 --activate
+
+WORKDIR /workspace
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+COPY apps/api/package.json apps/api/package.json
+COPY packages/database/package.json packages/database/package.json
+COPY packages/database/tsconfig*.json packages/database/
+RUN pnpm install --frozen-lockfile
+
+COPY apps/api apps/api
+COPY packages/database packages/database
+RUN pnpm --filter @geoterracakra/api... run build
+
+FROM node:24-bookworm-slim AS production
+
+ENV NODE_ENV=production
+ENV COREPACK_HOME=/corepack
+
+RUN corepack enable && corepack prepare pnpm@11.4.0 --activate
+
+WORKDIR /workspace
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/api/package.json apps/api/package.json
+COPY packages/database/package.json packages/database/package.json
+RUN pnpm install --prod --frozen-lockfile
+
+COPY --from=build /workspace/apps/api/dist apps/api/dist
+COPY --from=build /workspace/packages/database/dist packages/database/dist
+COPY --from=build /workspace/packages/database/.migration-dist/migrations packages/database/migrations
+
+USER node
+WORKDIR /workspace/apps/api
+
+EXPOSE 3000
+
+CMD ["node", "dist/main.js"]

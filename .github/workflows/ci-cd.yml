@@ -1,0 +1,193 @@
+name: GeoTerraCakra CI/CD
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 24
+  PNPM_VERSION: 11.4.0
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Enable pnpm
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare pnpm@${PNPM_VERSION} --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    env:
+      MAPID_API_KEY: ${{ secrets.MAPID_API_KEY }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Enable pnpm
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare pnpm@${PNPM_VERSION} --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build applications
+        env:
+          VITE_API_URL: /api
+          VITE_MARTIN_URL: /tiles
+        run: pnpm build
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy-production:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      SERVER_IP: ${{ secrets.SERVER_IP }}
+      SERVER_PORT: ${{ secrets.SERVER_PORT }}
+      SERVER_USER: ${{ secrets.SERVER_USER }}
+      SERVER_PATH: ${{ secrets.SERVER_PATH }}
+      APP_BACKEND_PORT: ${{ secrets.APP_BACKEND_PORT }}
+      SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+      SERVER_SSH_KNOWN_HOSTS: ${{ secrets.SERVER_SSH_KNOWN_HOSTS }}
+      PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
+      MARTIN_PORT: ${{ vars.MARTIN_PORT || '3001' }}
+      NGINX_PORT: ${{ vars.NGINX_PORT || '8081' }}
+      SERVER_NAME: ${{ vars.SERVER_NAME || '_' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist
+
+      - name: Install deployment tools
+        run: sudo apt-get update && sudo apt-get install --yes gettext-base rsync
+
+      - name: Prepare SSH credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${SERVER_SSH_KEY}" || { echo 'SERVER_SSH_KEY is required.'; exit 1; }
+          test -n "${SERVER_SSH_KNOWN_HOSTS}" || { echo 'SERVER_SSH_KNOWN_HOSTS is required.'; exit 1; }
+          install -m 700 -d "${RUNNER_TEMP}/geoterracakra-ssh"
+          printf '%s\n' "${SERVER_SSH_KEY}" > "${RUNNER_TEMP}/geoterracakra-ssh/id_ed25519"
+          chmod 600 "${RUNNER_TEMP}/geoterracakra-ssh/id_ed25519"
+          printf '%s\n' "${SERVER_SSH_KNOWN_HOSTS}" > "${RUNNER_TEMP}/geoterracakra-ssh/known_hosts"
+
+      - name: Prepare production environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variable in SERVER_IP SERVER_PORT SERVER_USER SERVER_PATH APP_BACKEND_PORT PRODUCTION_ENV_FILE; do
+            if [ -z "${!variable:-}" ]; then
+              echo "${variable} is required."
+              exit 1
+            fi
+          done
+          printf '%s\n' "${PRODUCTION_ENV_FILE}" > .env.production
+          printf '\nAPP_BACKEND_PORT=%s\nMARTIN_PORT=%s\n' "${APP_BACKEND_PORT}" "${MARTIN_PORT}" >> .env.production
+
+      - name: Create remote directories
+        run: >-
+          ssh -p "${SERVER_PORT}"
+          -i "${RUNNER_TEMP}/geoterracakra-ssh/id_ed25519"
+          -o UserKnownHostsFile="${RUNNER_TEMP}/geoterracakra-ssh/known_hosts"
+          "${SERVER_USER}@${SERVER_IP}"
+          "mkdir -p '${SERVER_PATH}/fe' '${SERVER_PATH}/app'"
+
+      - name: Upload frontend
+        run: >-
+          rsync -az --delete
+          -e "ssh -p ${SERVER_PORT} -i ${RUNNER_TEMP}/geoterracakra-ssh/id_ed25519 -o UserKnownHostsFile=${RUNNER_TEMP}/geoterracakra-ssh/known_hosts"
+          apps/web/dist/
+          "${SERVER_USER}@${SERVER_IP}:${SERVER_PATH}/fe/"
+
+      - name: Upload application
+        run: >-
+          rsync -az --delete
+          --exclude .env.production
+          --exclude .git
+          --exclude .github
+          --exclude data
+          --exclude node_modules
+          --exclude dist
+          --exclude apps/web
+          -e "ssh -p ${SERVER_PORT} -i ${RUNNER_TEMP}/geoterracakra-ssh/id_ed25519 -o UserKnownHostsFile=${RUNNER_TEMP}/geoterracakra-ssh/known_hosts"
+          ./
+          "${SERVER_USER}@${SERVER_IP}:${SERVER_PATH}/app/"
+
+      - name: Upload production environment
+        run: >-
+          scp -P "${SERVER_PORT}"
+          -i "${RUNNER_TEMP}/geoterracakra-ssh/id_ed25519"
+          -o UserKnownHostsFile="${RUNNER_TEMP}/geoterracakra-ssh/known_hosts"
+          .env.production
+          "${SERVER_USER}@${SERVER_IP}:${SERVER_PATH}/app/.env.production"
+
+      - name: Deploy application
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "${SERVER_PORT}" \
+            -i "${RUNNER_TEMP}/geoterracakra-ssh/id_ed25519" \
+            -o UserKnownHostsFile="${RUNNER_TEMP}/geoterracakra-ssh/known_hosts" \
+            "${SERVER_USER}@${SERVER_IP}" \
+            "cd '${SERVER_PATH}/app' &&
+            NGINX_PORT='${NGINX_PORT}' SERVER_NAME='${SERVER_NAME}' SERVER_PATH='${SERVER_PATH}' APP_BACKEND_PORT='${APP_BACKEND_PORT}' MARTIN_PORT='${MARTIN_PORT}'
+            envsubst '\$SERVER_PATH \$APP_BACKEND_PORT \$MARTIN_PORT \$SERVER_NAME \$NGINX_PORT' < deploy/nginx/geoterracakra.conf.template > /tmp/geoterracakra.conf &&
+            sudo install -m 644 /tmp/geoterracakra.conf /etc/nginx/sites-available/geoterracakra &&
+            sudo nginx -t && sudo systemctl reload nginx &&
+            sudo docker compose --env-file .env.production -f docker-compose.production.yml up --build --detach postgis redis &&
+            sudo docker compose --env-file .env.production -f docker-compose.production.yml run --rm api node /workspace/packages/database/dist/migrate.js &&
+            sudo docker compose --env-file .env.production -f docker-compose.production.yml up --build --detach api martin"

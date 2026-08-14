@@ -1,0 +1,69 @@
+name: geoterracakra-production
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile.production
+    image: geoterracakra-api:production
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      WEB_ORIGIN: ${WEB_ORIGIN}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASS}@postgis:5432/${POSTGRES_DB}
+    ports:
+      - "127.0.0.1:${APP_BACKEND_PORT:-5001}:3000"
+    depends_on:
+      postgis:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  martin:
+    image: ghcr.io/maplibre/martin:1.13.0
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASS}@postgis:5432/${POSTGRES_DB}
+    ports:
+      - "127.0.0.1:${MARTIN_PORT:-3001}:3000"
+    depends_on:
+      postgis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgis:
+    image: kartoza/postgis:18-3.6
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASS: ${POSTGRES_PASS}
+      POSTGRES_MULTIPLE_EXTENSIONS: postgis
+    volumes:
+      - postgis-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:8-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgis-data:
+  redis-data:

@@ -12,7 +12,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && tsc -p tsconfig.migrations.json",
     "db:migrate": "tsx src/migrate.ts",
     "typecheck": "tsc --noEmit",
     "check": "pnpm run typecheck"

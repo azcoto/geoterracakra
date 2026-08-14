@@ -1,0 +1,11 @@
+.git
+.gitlab-ci.yml
+.corepack
+.pnpm-store
+.turbo
+node_modules
+**/node_modules
+**/dist
+**/.migration-dist
+data
+*.log
