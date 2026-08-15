@@ -85,47 +85,18 @@ const gridHitLayer: Omit<FillLayerSpecification, 'filter' | 'source'> = {
 const landcoverFillLayer: Omit<FillLayerSpecification, 'filter' | 'source' | 'source-layer'> = {
   id: 'landcover-fill',
   paint: {
-    'fill-color': [
-      'match',
-      ['get', 'class_code'],
-      1,
-      '#419bdf',
-      2,
-      '#397d49',
-      4,
-      '#7a87c6',
-      5,
-      '#e49635',
-      7,
-      '#c4281b',
-      8,
-      '#a59b8f',
-      9,
-      '#b39fe1',
-      10,
-      '#f1f5f9',
-      11,
-      '#88b053',
-      '#94a3b8',
-    ],
+    'fill-color': ['match', ['get', 'class_code'], 0, '#88b053', 1, '#419bdf', 2, '#c4281b', 3, '#e49635', '#94a3b8'],
     'fill-opacity': 0.6,
   },
   type: 'fill',
 };
 
 const landcoverLegend = [
+  { code: 0, color: '#88b053', label: 'Vegetation' },
   { code: 1, color: '#419bdf', label: 'Water' },
-  { code: 2, color: '#397d49', label: 'Trees' },
-  { code: 4, color: '#7a87c6', label: 'Flooded vegetation' },
-  { code: 5, color: '#e49635', label: 'Crops' },
-  { code: 7, color: '#c4281b', label: 'Built area' },
-  { code: 8, color: '#a59b8f', label: 'Bare ground' },
-  { code: 9, color: '#b39fe1', label: 'Snow/ice' },
-  { code: 10, color: '#f1f5f9', label: 'Clouds' },
-  { code: 11, color: '#88b053', label: 'Rangeland' },
+  { code: 2, color: '#c4281b', label: 'Built-up' },
+  { code: 3, color: '#e49635', label: 'Open land' },
 ];
-
-const malangBoundaryFilter: LineLayerSpecification['filter'] = ['in', ['get', 'KDPKAB'], ['literal', ['35.07', '35.73']]];
 
 const satelliteOption = { label: 'Sentinel 2', value: 'sentinel-2' };
 const analysisOption = { label: 'Tutupan Lahan', value: 'tutupan-lahan' };
@@ -134,13 +105,25 @@ interface SelectOption {
   value: string;
 }
 
-const yearOptions: SelectOption[] = [
-  { label: '2020', value: '2020' },
-  { label: '2021', value: '2021' },
-  { label: '2022', value: '2022' },
-  { label: '2023', value: '2023' },
-  { label: '2025', value: '2025' },
+const areaOptions: SelectOption[] = [
+  { label: 'Kabupaten Malang', value: '35.07' },
+  { label: 'Kota Malang', value: '35.73' },
+  { label: 'Keduanya', value: 'all' },
 ];
+
+function getAreaLandcoverFilter(area: SelectOption): LineLayerSpecification['filter'] {
+  if (area.value === 'all') {
+    return ['in', ['get', 'area'], ['literal', ['35.07', '35.73']]];
+  }
+  return ['==', ['get', 'area'], area.value];
+}
+
+function getAreaBoundaryFilter(area: SelectOption): LineLayerSpecification['filter'] {
+  if (area.value === 'all') {
+    return ['in', ['get', 'KDPKAB'], ['literal', ['35.07', '35.73']]];
+  }
+  return ['==', ['get', 'KDPKAB'], area.value];
+}
 
 interface DesaOption {
   kecamatan: string;
@@ -180,7 +163,9 @@ function LandcoverMap() {
   const [areBoundariesVisible, setAreBoundariesVisible] = useState(true);
   const [isGridVisible, setIsGridVisible] = useState(false);
   const [isLandcoverVisible, setIsLandcoverVisible] = useState(false);
-  const [selectedYear, setSelectedYear] = useState<SelectOption>(yearOptions[4]);
+  const [selectedYear, setSelectedYear] = useState<SelectOption | null>(null);
+  const [selectedArea, setSelectedArea] = useState<SelectOption>(areaOptions[0]);
+  const [yearOptions, setYearOptions] = useState<SelectOption[]>([]);
   const [processedYear, setProcessedYear] = useState<string | null>(null);
   const [desa, setDesa] = useState<DesaOption[]>([]);
   const [selectedDesa, setSelectedDesa] = useState<DesaOption | null>(null);
@@ -215,6 +200,32 @@ function LandcoverMap() {
   }, []);
 
   useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadYears() {
+      try {
+        const response = await fetch(`${apiUrl}/landcover/years`, { signal: controller.signal });
+        if (!response.ok) throw new Error('Unable to load available years');
+
+        const payload = (await response.json()) as { data: number[] };
+        const options = (payload.data ?? []).map((year) => ({ label: String(year), value: String(year) }));
+        setYearOptions(options);
+        if (options.length > 0) {
+          setSelectedYear(options[options.length - 1]);
+        }
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+          setYearOptions([{ label: '2024', value: '2024' }]);
+          setSelectedYear({ label: '2024', value: '2024' });
+        }
+      }
+    }
+
+    loadYears();
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
     if (!selectedDesa) return;
     const desaToFocus = selectedDesa;
 
@@ -241,6 +252,7 @@ function LandcoverMap() {
   }, [selectedDesa]);
 
   function processLandcover() {
+    if (!selectedYear) return;
     setProcessedYear(selectedYear.value);
     setIsLandcoverVisible(true);
     setSelectedGrid(null);
@@ -302,8 +314,13 @@ function LandcoverMap() {
         style={{ height: '100%', width: '100%' }}
       >
         {processedYear && isLandcoverVisible && (
-          <Source id={`landcover-${processedYear}`} key={processedYear} type="vector" url={`${martinUrl}/landcover_${processedYear}`}>
-            <Layer {...landcoverFillLayer} source-layer={`landcover_${processedYear}`} />
+          <Source
+            id={`landcover-${processedYear}`}
+            key={`${processedYear}-${selectedArea.value}`}
+            tiles={[`${martinUrl}/landcover_mvt/{z}/{x}/{y}?year=${processedYear}&area=${selectedArea.value}`]}
+            type="vector"
+          >
+            <Layer {...landcoverFillLayer} source-layer="landcover" />
           </Source>
         )}
         {isGridVisible && (
@@ -314,7 +331,7 @@ function LandcoverMap() {
         )}
         {areBoundariesVisible && (
           <Source id="kabkota" type="vector" url={`${martinUrl}/kabkota`}>
-            <Layer {...boundaryLineLayer} filter={malangBoundaryFilter} />
+            <Layer {...boundaryLineLayer} filter={getAreaBoundaryFilter(selectedArea)} />
           </Source>
         )}
         {areBoundariesVisible && selectedDesa && (
@@ -387,7 +404,7 @@ function LandcoverMap() {
           <CardHeader>
             <div>
               <p className="map-panel-eyebrow">Landcover explorer</p>
-              <CardTitle>Kota &amp; Kabupaten Malang</CardTitle>
+              <CardTitle>Kabupaten &amp; Kota Malang</CardTitle>
             </div>
             <CardAction>
               <Button aria-label="Minimize landcover panel" className="map-panel-minimize" onClick={() => setIsPanelMinimized(true)} size="icon" variant="ghost">
@@ -397,6 +414,29 @@ function LandcoverMap() {
           </CardHeader>
           <CardContent>
             <div className="grid gap-2">
+              <label className="map-panel-label" htmlFor="wilayah">
+                Wilayah
+              </label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {areaOptions.map((option) => (
+                  <Button
+                    aria-pressed={selectedArea.value === option.value}
+                    className={
+                      selectedArea.value === option.value
+                        ? 'map-panel-area-button bg-primary text-primary-foreground hover:bg-primary/80'
+                        : 'map-panel-area-button border-border bg-background text-foreground shadow-xs hover:bg-muted dark:border-input dark:bg-input/30 dark:hover:bg-input/50'
+                    }
+                    key={option.value}
+                    onClick={() => setSelectedArea(option)}
+                    size="sm"
+                    type="button"
+                  >
+                    {option.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div className="mt-4 grid gap-2">
               <label className="map-panel-label" htmlFor="citra-satelit">
                 Citra Satelit
               </label>
@@ -427,6 +467,7 @@ function LandcoverMap() {
                 Tahun
               </label>
               <Select
+                disabled={yearOptions.length === 0 || selectedYear === null}
                 itemToStringLabel={(item) => item.label}
                 itemToStringValue={(item) => item.value}
                 onValueChange={(value) => setSelectedYear(value as SelectOption)}

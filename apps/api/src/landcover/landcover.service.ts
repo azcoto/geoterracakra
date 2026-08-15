@@ -13,9 +13,24 @@ interface LandcoverFeatureRow {
   id: number;
 }
 
+interface LandcoverYearRow {
+  year: number;
+}
+
 @Injectable()
 export class LandcoverService {
   constructor(@Inject('DATABASE') private readonly db: Kysely<Database>) {}
+
+  async listYears() {
+    const result = await sql<LandcoverYearRow>`
+      SELECT DISTINCT year
+      FROM landcover
+      WHERE source = 'malang-landcover'
+      ORDER BY year
+    `.execute(this.db);
+
+    return { data: result.rows.map((row) => row.year) };
+  }
 
   async getGridStatistics(gridId: number, year: number) {
     const result = await sql<ClassAreaRow>`
@@ -25,7 +40,7 @@ export class LandcoverService {
       FROM landcover
       WHERE grid_id = ${gridId}
         AND year = ${year}
-        AND source = 'esri-landcover'
+        AND source = 'malang-landcover'
       GROUP BY class_code
       ORDER BY class_code
     `.execute(this.db);
@@ -52,7 +67,7 @@ export class LandcoverService {
       FROM landcover
       WHERE grid_id = ${gridId}
         AND year = ${year}
-        AND source = 'esri-landcover'
+        AND source = 'malang-landcover'
       ORDER BY class_code, id
     `.execute(this.db);
 
@@ -64,8 +79,8 @@ export class LandcoverService {
         properties: {
           class_code: row.class_code,
           grid_id: gridId,
-          methodology: 'proprietary',
-          source: 'esri-landcover',
+          methodology: 'manual',
+          source: 'malang-landcover',
           year,
         },
         type: 'Feature',

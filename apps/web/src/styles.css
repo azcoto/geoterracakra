@@ -185,6 +185,15 @@ button {
   text-transform: uppercase;
 }
 
+.map-panel-area-button {
+  padding-inline: 4px;
+  font-size: 0.75rem;
+  line-height: 1.15;
+  white-space: normal;
+  overflow-wrap: break-word;
+  text-align: center;
+}
+
 .map-panel-heading h1 {
   margin-top: 3px;
   color: #0f172a;

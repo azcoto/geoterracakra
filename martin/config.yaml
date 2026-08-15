@@ -1,0 +1,11 @@
+postgres:
+  connection_string: postgresql://geoterracakra:geoterracakra@postgis:5432/geoterracakra
+  tables:
+    landcover_2024_test:
+      id_column: id
+      geometry_column: geom
+      srid: 4326
+      maxzoom: 15
+      minzoom: 0
+      features_per_tile: 50000
+      feature_size_limit: 100
