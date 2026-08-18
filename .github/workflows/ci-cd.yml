@@ -187,9 +187,10 @@ jobs:
             -o UserKnownHostsFile="${RUNNER_TEMP}/geoterracakra-ssh/known_hosts" \
             "${SERVER_USER}@${SERVER_IP}" \
             "cd '${SERVER_PATH}/app' &&
-            NGINX_PORT='${NGINX_PORT}' SERVER_NAME='${SERVER_NAME}' SERVER_PATH='${SERVER_PATH}' APP_BACKEND_PORT='${APP_BACKEND_PORT}' MARTIN_PORT='${MARTIN_PORT}'
+            export NGINX_PORT='${NGINX_PORT}' SERVER_NAME='${SERVER_NAME}' SERVER_PATH='${SERVER_PATH}' APP_BACKEND_PORT='${APP_BACKEND_PORT}' MARTIN_PORT='${MARTIN_PORT}' &&
             envsubst '\$SERVER_PATH \$APP_BACKEND_PORT \$MARTIN_PORT \$SERVER_NAME \$NGINX_PORT' < deploy/nginx/geoterracakra.conf.template > /tmp/geoterracakra.conf &&
             sudo install -m 644 /tmp/geoterracakra.conf /etc/nginx/sites-available/geoterracakra &&
+            sudo ln -sfn /etc/nginx/sites-available/geoterracakra /etc/nginx/sites-enabled/geoterracakra &&
             sudo nginx -t && sudo systemctl reload nginx &&
             sudo docker compose --env-file .env.production -f docker-compose.production.yml up --build --detach postgis redis &&
             sudo docker compose --env-file .env.production -f docker-compose.production.yml run --rm api node /workspace/packages/database/dist/migrate.js &&
