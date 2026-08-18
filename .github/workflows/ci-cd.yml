@@ -135,6 +135,12 @@ jobs:
               exit 1
             fi
           done
+          for variable in POSTGRES_DB POSTGRES_USER POSTGRES_PASS WEB_ORIGIN; do
+            if ! grep -q "^${variable}=" <<< "${PRODUCTION_ENV_FILE}"; then
+              echo "PRODUCTION_ENV_FILE must define ${variable}."
+              exit 1
+            fi
+          done
           printf '%s\n' "${PRODUCTION_ENV_FILE}" > .env.production
           printf '\nAPP_BACKEND_PORT=%s\nMARTIN_PORT=%s\n' "${APP_BACKEND_PORT}" "${MARTIN_PORT}" >> .env.production
 
