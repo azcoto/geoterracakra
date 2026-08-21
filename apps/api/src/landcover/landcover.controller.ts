@@ -1,17 +1,20 @@
 import { BadRequestException, Controller, Get, Inject, NotFoundException, Param, ParseIntPipe, Query } from '@nestjs/common';
 import { LandcoverService } from './landcover.service.js';
 
-const supportedYears = new Set([2020, 2021, 2022, 2023, 2025]);
-
 @Controller('landcover')
 export class LandcoverController {
   constructor(@Inject(LandcoverService) private readonly landcoverService: LandcoverService) {}
 
+  @Get('years')
+  async getYears() {
+    return this.landcoverService.listYears();
+  }
+
   @Get('grid/:gridId/statistics')
   async getGridStatistics(@Param('gridId', ParseIntPipe) gridId: number, @Query('year') yearValue: string) {
     const year = Number(yearValue);
-    if (!Number.isInteger(year) || !supportedYears.has(year)) {
-      throw new BadRequestException('year must be one of 2020, 2021, 2022, 2023, or 2025');
+    if (!Number.isInteger(year)) {
+      throw new BadRequestException('year must be an integer');
     }
 
     const statistics = await this.landcoverService.getGridStatistics(gridId, year);
@@ -25,8 +28,8 @@ export class LandcoverController {
   @Get('grid/:gridId/features')
   async getGridFeatures(@Param('gridId', ParseIntPipe) gridId: number, @Query('year') yearValue: string) {
     const year = Number(yearValue);
-    if (!Number.isInteger(year) || !supportedYears.has(year)) {
-      throw new BadRequestException('year must be one of 2020, 2021, 2022, 2023, or 2025');
+    if (!Number.isInteger(year)) {
+      throw new BadRequestException('year must be an integer');
     }
 
     const featureCollection = await this.landcoverService.getGridFeatures(gridId, year);

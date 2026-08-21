@@ -16,6 +16,7 @@ export interface GridTable {
 
 /** Vectorized landcover features, partitioned by analysis grid and observation year. */
 export interface LandcoverTable {
+  area: string | null;
   class_code: number;
   geom: unknown;
   grid_id: bigint;
