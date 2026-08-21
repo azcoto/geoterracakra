@@ -17,8 +17,8 @@ import { Switch } from '../components/ui/switch';
 maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
 const mapIdApiKey = import.meta.env.VITE_MAPID_API_KEY;
-const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
-const martinUrl = import.meta.env.VITE_MARTIN_URL ?? 'http://localhost:3001';
+const apiUrl = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:3000' : '/api');
+const martinUrl = import.meta.env.VITE_MARTIN_URL ?? (import.meta.env.DEV ? 'http://localhost:3001' : '/tiles');
 const satelliteMapStyle = `https://basemap.mapid.io/styles/satellite/style.json?key=${encodeURIComponent(mapIdApiKey)}`;
 const darkMatterMapStyle = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
 
@@ -324,18 +324,18 @@ function LandcoverMap() {
           </Source>
         )}
         {isGridVisible && (
-          <Source id="grid" type="vector" url={`${martinUrl}/grid`}>
+          <Source id="grid" tiles={[`${martinUrl}/grid/{z}/{x}/{y}`]} type="vector">
             <Layer {...gridHitLayer} />
             <Layer {...gridLineLayer} />
           </Source>
         )}
         {areBoundariesVisible && (
-          <Source id="kabkota" type="vector" url={`${martinUrl}/kabkota`}>
+          <Source id="kabkota" tiles={[`${martinUrl}/kabkota/{z}/{x}/{y}`]} type="vector">
             <Layer {...boundaryLineLayer} filter={getAreaBoundaryFilter(selectedArea)} />
           </Source>
         )}
         {areBoundariesVisible && selectedDesa && (
-          <Source id="desa" type="vector" url={`${martinUrl}/desa`}>
+          <Source id="desa" tiles={[`${martinUrl}/desa/{z}/{x}/{y}`]} type="vector">
             <Layer {...desaBoundaryLineLayer} filter={['==', ['get', 'KDEPUM'], selectedDesa.kode]} />
           </Source>
         )}
