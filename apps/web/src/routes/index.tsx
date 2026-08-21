@@ -262,7 +262,7 @@ function LandcoverMap() {
     if (!processedYear) return;
 
     const feature = event.features?.find((candidate) => candidate.layer.id === gridHitLayer.id);
-    const gridId = Number(feature?.properties?.id);
+    const gridId = Number(feature?.id ?? feature?.properties?.id);
     if (!Number.isSafeInteger(gridId)) return;
 
     setSelectedGrid({ id: gridId, point: event.point });
