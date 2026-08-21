@@ -14,6 +14,8 @@ export default defineConfig(({ mode }) => {
   return {
     define: {
       'import.meta.env.VITE_MAPID_API_KEY': JSON.stringify(environment.MAPID_API_KEY ?? ''),
+      ...(environment.VITE_API_URL ? { 'import.meta.env.VITE_API_URL': JSON.stringify(environment.VITE_API_URL) } : {}),
+      ...(environment.VITE_MARTIN_URL ? { 'import.meta.env.VITE_MARTIN_URL': JSON.stringify(environment.VITE_MARTIN_URL) } : {}),
     },
     resolve: {
       alias: {
